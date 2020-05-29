@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euo pipefail
+
+if [[ "${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_DEBUG:-false}" =~ (true|on|1) ]]; then
+  set -x
+fi
+
+if [[ -n "${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_KEY:-}" ]]; then
+  AWS_ARGS=""
+
+  if [[ -n "${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_PROFILE:-}" ]]; then
+    AWS_ARGS="--profile ${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_PROFILE}"
+  fi
+
+  cache_key_prefix=$(echo "$BUILDKITE_PLUGIN_INCREMENTAL_CACHE_KEY" | sed -e 's/{.*//')
+  template_value=$(echo "$BUILDKITE_PLUGIN_INCREMENTAL_CACHE_KEY" | sed -e 's/^[^\{{]*[^A-Za-z]*//' -e 's/.}}.*$//' | tr -d \' | tr -d \")
+
+  if [[ $template_value == *"checksum"* ]]; then
+    if [[ "$OSTYPE" == "linux-gnu" ]]; then
+      function=${template_value/"checksum"/"sha1sum"}
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+      # fallback to shasum
+      function=${template_value/"checksum"/"shasum"}
+    # elif [[ "$OSTYPE" == "win32" ]]; then # for further usage
+    else
+      # fallback to sha1sum
+      function=${template_value/"checksum"/"sha1sum"}
+    fi
+    result=$($function | awk '{print $1}')
+    cache_key="$cache_key_prefix$result"
+  else
+    cache_key=$BUILDKITE_PLUGIN_INCREMENTAL_CACHE_KEY
+  fi
+
+
+  tar_file="${cache_key}.tar"
+  zip_file="${tar_file}.gz"
+
+  aws s3api head-object --bucket "${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_BUCKET_NAME}" --key "${zip_file}" || no_head=true
+
+  if ${no_head:-false}; then
+    echo ":aws: :amazon-s3: Cache miss: ${cache_key}"
+  else
+    echo ":aws: :amazon-s3: Cache hit: ${cache_key}"
+    aws s3 cp "s3://${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_BUCKET_NAME}/${zip_file}" . $AWS_ARGS
+    gunzip "${zip_file}"
+    tar -xf "${tar_file}" -C .
+    rm -f "${tar_file}"
+  fi
+else
+  echo "~~~ Cache is skipped because no cache key provided"
+  exit 0
+fi
