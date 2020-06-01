@@ -49,17 +49,26 @@ if [[ -n "${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_KEY:-}" ]]; then
     fi
   done < <(env | sort)
 
-  echo ":aws: :amazon-s3: Save cache: ${paths[*]}"
 
   tar_file="${cache_key}.tar"
   zip_file="${tar_file}.gz"
 
-  if [ ! -f "$tar_file" ]; then
-    tar -cf "${tar_file}" "${paths[@]}"
-    gzip "${tar_file}"
+  aws s3api head-object --bucket "${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_BUCKET_NAME}" --key "${zip_file}" || no_head=true
+
+  if ${no_head:-false}; then
+    echo -e ":aws: :amazon-s3: Save cache: ${paths[*]}"
+
+    if [ ! -f "$tar_file" ]; then
+      tar -cf "${tar_file}" -P "${paths[@]}"
+      gzip "${tar_file}"
+    fi
+
+    aws s3 cp "${zip_file}" "s3://${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_BUCKET_NAME}/${zip_file}" $AWS_ARGS
+    rm -f "${zip_file}"
+  else
+    echo -e ":aws: :amazon-s3: Cache already exists for ${cache_key}"
   fi
-  aws s3 cp "${zip_file}" "s3://${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_BUCKET_NAME}/${zip_file}" $AWS_ARGS
-  rm -f "${zip_file}"
+
 else
   echo "~~~ Cache is skipped because no cache key provided"
   exit 0

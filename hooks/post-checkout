@@ -39,12 +39,12 @@ if [[ -n "${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_KEY:-}" ]]; then
   aws s3api head-object --bucket "${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_BUCKET_NAME}" --key "${zip_file}" || no_head=true
 
   if ${no_head:-false}; then
-    echo ":aws: :amazon-s3: Cache miss: ${cache_key}"
+    echo -e ":aws: :amazon-s3: Cache miss: ${cache_key}"
   else
-    echo ":aws: :amazon-s3: Cache hit: ${cache_key}"
+    echo -e ":aws: :amazon-s3: Cache hit: ${cache_key}"
     aws s3 cp "s3://${BUILDKITE_PLUGIN_INCREMENTAL_CACHE_S3_BUCKET_NAME}/${zip_file}" . $AWS_ARGS
     gunzip "${zip_file}"
-    tar -xf "${tar_file}" -C .
+    tar -xf "${tar_file}" -P
     rm -f "${tar_file}"
   fi
 else
